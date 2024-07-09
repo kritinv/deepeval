@@ -32,6 +32,7 @@ module.exports = async function createConfigAsync() {
       locales: ['en'],
     },
     plugins: [
+      'docusaurus-plugin-sass',
       [
         "posthog-docusaurus",
         {
@@ -56,7 +57,7 @@ module.exports = async function createConfigAsync() {
             rehypePlugins: [rehypeKatexModule],
           },
           theme: {
-            customCss: require.resolve('./src/css/custom.css'),
+            customCss: require.resolve('./src/css/custom.scss'),
           },
           gtag: {
             trackingID: 'G-N2EGDDYG9M',
@@ -72,6 +73,10 @@ module.exports = async function createConfigAsync() {
         integrity:
           'sha384-odtC+0UGzzFL/6PNoE8rX/SPcQDXBJ+uRepguP4QkPCm2LBxH3FA3y+fKSiJ+AmM',
         crossorigin: 'anonymous',
+      },
+      {
+        href: 'https://fonts.googleapis.com/css2?family=Lexend+Deca:wght@500&display=swap',
+        type: 'text/css',
       },
     ],
     themeConfig:

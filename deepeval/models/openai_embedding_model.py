@@ -40,43 +40,35 @@ class OpenAIEmbeddingModel(DeepEvalBaseEmbeddingModel):
             openai_api_version = KEY_FILE_HANDLER.fetch_data(
                 KeyValues.OPENAI_API_VERSION
             )
-            azure_deployment = KEY_FILE_HANDLER.fetch_data(
-                KeyValues.AZURE_DEPLOYMENT_NAME
+            azure_embedding_deployment = KEY_FILE_HANDLER.fetch_data(
+                KeyValues.AZURE_EMBEDDING_DEPLOYMENT_NAME
             )
             azure_endpoint = KEY_FILE_HANDLER.fetch_data(
                 KeyValues.AZURE_OPENAI_ENDPOINT
             )
 
-            model_version = KEY_FILE_HANDLER.fetch_data(
-                KeyValues.AZURE_MODEL_VERSION
-            )
-
-            if model_version is None:
-                model_version = ""
-
             return AzureOpenAIEmbeddings(
                 openai_api_version=openai_api_version,
-                azure_deployment=azure_deployment,
+                azure_deployment=azure_embedding_deployment,
                 azure_endpoint=azure_endpoint,
                 openai_api_key=openai_api_key,
-                model_version=model_version,
             )
 
         return OpenAIEmbeddings(model=self.model_name)
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_text(self, text: str) -> List[float]:
         embedding_model = self.load_model()
         return embedding_model.embed_query(text)
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+    def embed_texts(self, texts: List[str]) -> List[List[float]]:
         embedding_model = self.load_model()
         return embedding_model.embed_documents(texts)
 
-    async def aembed_query(self, text: str) -> List[float]:
+    async def a_embed_text(self, text: str) -> List[float]:
         embedding_model = self.load_model()
         return await embedding_model.aembed_query(text)
 
-    async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
+    async def a_embed_texts(self, texts: List[str]) -> List[List[float]]:
         embedding_model = self.load_model()
         return await embedding_model.aembed_documents(texts)
 
@@ -89,35 +81,3 @@ class OpenAIEmbeddingModel(DeepEvalBaseEmbeddingModel):
             return "azure openai"
         elif self.model_name:
             return self.model_name
-
-
-############################
-###### Example Usage #######
-############################
-
-"""
-import time
-import asyncio
-
-async def async_main(model):
-    start_async = time.time()
-    async_result = await model.aembed_query('test')
-    end_async = time.time()
-    
-    print(f"Asynchronous Execution time: {end_async - start_async} seconds")
-
-def main():
-    model = OpenAIEmbeddingModel()
-
-    start_sync = time.time()
-    sync_result = model.embed_query('test')
-    end_sync = time.time()
-
-    print(f"Synchronous Execution time: {end_sync - start_sync} seconds")
-
-    # Call the asynchronous part using asyncio.run
-    asyncio.run(async_main(model))
-
-if __name__ == "__main__":
-    main()
-"""

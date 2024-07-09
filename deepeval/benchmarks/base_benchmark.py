@@ -1,16 +1,17 @@
 from abc import ABC, abstractmethod
-from typing import List, TypeVar, Generic, List
+from typing import List, TypeVar, Generic, List, Optional
+from datasets import Dataset
 
 from deepeval.dataset import Golden
-from deepeval.benchmarks.big_bench_hard.task import BigBenchHardTask
 
 
 T = TypeVar("T")
 
 
 class DeepEvalBaseBenchmark(ABC, Generic[T]):
-    def __init__(self):
+    def __init__(self, dataset: Optional[Dataset] = None):
         self.tasks: List[T] = []
+        self.dataset = dataset
 
     @abstractmethod
     def load_benchmark_dataset(self) -> List[Golden]:

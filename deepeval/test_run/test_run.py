@@ -23,6 +23,7 @@ from deepeval.utils import (
     delete_file_if_exists,
     get_is_running_deepeval,
     is_confident,
+    is_in_ci_env,
 )
 from deepeval.test_run.cache import test_run_cache_manager
 
@@ -41,14 +42,6 @@ class MetricScoreType(BaseModel):
 class MetricScores(BaseModel):
     metric: str
     scores: List[float]
-
-
-class DeploymentConfigs(BaseModel):
-    env: str
-    actor: Optional[str]
-    branch: Optional[str]
-    sha: Optional[str]
-    repo: Optional[str]
 
 
 class MetricsAverageDict:
@@ -79,16 +72,15 @@ class RemainingTestRun(BaseModel):
     test_cases: List[LLMApiTestCase] = Field(
         alias="testCases", default_factory=lambda: []
     )
+    conversational_test_cases: List[ConversationalApiTestCase] = Field(
+        alias="conversationalTestCases", default_factory=lambda: []
+    )
 
 
 class TestRun(BaseModel):
     test_file: Optional[str] = Field(
         None,
         alias="testFile",
-    )
-    deployment: Optional[bool] = Field(True)
-    deployment_configs: Optional[DeploymentConfigs] = Field(
-        None, alias="deploymentConfigs"
     )
     test_cases: List[LLMApiTestCase] = Field(
         alias="testCases", default_factory=lambda: []
@@ -255,8 +247,6 @@ class TestRunManager:
 
     def create_test_run(
         self,
-        deployment: Optional[bool] = False,
-        deployment_configs: Optional[DeploymentConfigs] = None,
         file_name: Optional[str] = None,
         disable_request: Optional[bool] = False,
     ):
@@ -266,8 +256,6 @@ class TestRunManager:
             testCases=[],
             metricsScores=[],
             hyperparameters=None,
-            deployment=deployment,
-            deploymentConfigs=deployment_configs,
             testPassed=None,
             testFailed=None,
         )
@@ -285,7 +273,6 @@ class TestRunManager:
                 with portalocker.Lock(
                     self.temp_file_name,
                     mode="r",
-                    timeout=5,
                     flags=portalocker.LOCK_SH | portalocker.LOCK_NB,
                 ) as file:
                     self.test_run = self.test_run.load(file)
@@ -301,9 +288,7 @@ class TestRunManager:
     def save_test_run(self):
         if self.save_to_disk:
             try:
-                with portalocker.Lock(
-                    self.temp_file_name, mode="w", timeout=5
-                ) as file:
+                with portalocker.Lock(self.temp_file_name, mode="w") as file:
                     self.test_run = self.test_run.save(file)
             except portalocker.exceptions.LockException:
                 print(
@@ -321,7 +306,6 @@ class TestRunManager:
                 with portalocker.Lock(
                     self.temp_file_name,
                     mode="r+",
-                    timeout=5,
                     flags=portalocker.LOCK_EX,
                 ) as file:
                     file.seek(0)
@@ -481,10 +465,23 @@ class TestRunManager:
         console = Console()
 
         if is_confident() and self.disable_request is False:
-            BATCH_SIZE = 50
+            BATCH_SIZE = 60
+            CONVERSATIONAL_BATCH_SIZE = BATCH_SIZE // 3
+
             initial_batch = test_run.test_cases[:BATCH_SIZE]
             remaining_test_cases = test_run.test_cases[BATCH_SIZE:]
-            if len(remaining_test_cases) > 0:
+
+            initial_conversational_batch = test_run.conversational_test_cases[
+                :CONVERSATIONAL_BATCH_SIZE
+            ]
+            remaining_conversational_test_cases = (
+                test_run.conversational_test_cases[CONVERSATIONAL_BATCH_SIZE:]
+            )
+
+            if (
+                len(remaining_test_cases) > 0
+                or len(remaining_conversational_test_cases) > 0
+            ):
                 console.print(
                     "Sending a large test run to Confident, this might take a bit longer than usual..."
                 )
@@ -493,11 +490,13 @@ class TestRunManager:
             ### POST REQUEST ###
             ####################
             test_run.test_cases = initial_batch
+            test_run.conversational_test_cases = initial_conversational_batch
             try:
                 body = test_run.model_dump(by_alias=True, exclude_none=True)
             except AttributeError:
                 # Pydantic version below 2.0
                 body = test_run.dict(by_alias=True, exclude_none=True)
+
             api = Api()
             result = api.post_request(
                 endpoint=Endpoints.TEST_RUN_ENDPOINT.value,
@@ -512,12 +511,38 @@ class TestRunManager:
             ################################################
             ### Send the remaining test cases in batches ###
             ################################################
-            for i in range(0, len(remaining_test_cases), BATCH_SIZE):
-                body = None
+            max_iterations = (
+                max(
+                    len(remaining_test_cases),
+                    len(remaining_conversational_test_cases),
+                )
+                // CONVERSATIONAL_BATCH_SIZE
+            )
+            for i in range(0, max_iterations + 1):
+                test_case_index = (
+                    i * CONVERSATIONAL_BATCH_SIZE * 3
+                )  # Multiply by 3 to match the conversational batch step
+                test_case_batch = remaining_test_cases[
+                    test_case_index : test_case_index + BATCH_SIZE
+                ]
+
+                # Adjusting for conversational_test_cases
+                conversational_index = i * CONVERSATIONAL_BATCH_SIZE
+                conversational_batch = remaining_conversational_test_cases[
+                    conversational_index : conversational_index
+                    + CONVERSATIONAL_BATCH_SIZE
+                ]
+
+                if len(test_case_batch) == 0 and len(conversational_batch) == 0:
+                    break
+
                 remaining_test_run = RemainingTestRun(
                     testRunId=response.testRunId,
-                    testCases=remaining_test_cases[i : i + BATCH_SIZE],
+                    testCases=test_case_batch,
+                    conversationalTestCases=conversational_batch,
                 )
+
+                body = None
                 try:
                     body = remaining_test_run.model_dump(
                         by_alias=True, exclude_none=True
@@ -534,15 +559,15 @@ class TestRunManager:
                         body=body,
                     )
                 except Exception as e:
-                    remaining_count = len(remaining_test_cases) - i
-                    message = f"Unexpected error when sending the last {remaining_count} test cases. Incomplete test run available at {link}"
+                    message = f"Unexpected error when sending some test cases. Incomplete test run available at {link}"
                     raise Exception(message) from e
 
             console.print(
                 "✅ Tests finished! View results on "
                 f"[link={link}]{link}[/link]"
             )
-            if test_run.deployment == False:
+
+            if is_in_ci_env() == False:
                 webbrowser.open(link)
 
         else:

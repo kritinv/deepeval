@@ -10,6 +10,7 @@ from deepeval.metrics import BaseMetric
 from deepeval.test_case import LLMTestCase, ConversationalTestCase
 from deepeval.utils import show_indicator
 from deepeval.test_run.cache import CachedTestCase, Cache
+from deepeval.telemetry import capture_metric_type
 
 
 def format_metric_description(
@@ -36,21 +37,22 @@ def metric_progress_indicator(
     total: int = 9999,
     transient: bool = True,
 ):
-    console = Console(file=sys.stderr)  # Direct output to standard error
-    if _show_indicator and show_indicator():
-        with Progress(
-            SpinnerColumn(style="rgb(106,0,255)"),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,  # Use the custom console
-            transient=transient,
-        ) as progress:
-            progress.add_task(
-                description=format_metric_description(metric, async_mode),
-                total=total,
-            )
+    with capture_metric_type(metric.__name__):
+        console = Console(file=sys.stderr)  # Direct output to standard error
+        if _show_indicator and show_indicator():
+            with Progress(
+                SpinnerColumn(style="rgb(106,0,255)"),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,  # Use the custom console
+                transient=transient,
+            ) as progress:
+                progress.add_task(
+                    description=format_metric_description(metric, async_mode),
+                    total=total,
+                )
+                yield
+        else:
             yield
-    else:
-        yield
 
 
 async def measure_metric_task(
@@ -82,12 +84,21 @@ async def measure_metric_task(
                 tc = test_case.messages[len(test_case.messages) - 1]
             else:
                 tc = test_case
+
             try:
                 await metric.a_measure(tc, _show_indicator=False)
                 finish_text = "Done"
             except TypeError:
-                await metric.a_measure(tc)
-                finish_text = "Done"
+                try:
+                    await metric.a_measure(tc)
+                    finish_text = "Done"
+                except Exception as e:
+                    if ignore_errors:
+                        metric.error = str(e)
+                        metric.success = False  # Override metric success
+                        finish_text = "Errored"
+                    else:
+                        raise
             except Exception as e:
                 if ignore_errors:
                     metric.error = str(e)
@@ -166,14 +177,23 @@ async def measure_metrics_with_indicator(
                     tc = test_case.messages[len(test_case.messages) - 1]
                 else:
                     tc = test_case
-                try:
-                    tasks.append(metric.a_measure(tc, _show_indicator=False))
-                except TypeError:
-                    tasks.append(metric.a_measure(tc))
-                except Exception as e:
-                    if ignore_errors:
-                        metric.error = str(e)
-                    else:
-                        raise
+
+                tasks.append(safe_a_measure(metric, tc, ignore_errors))
 
         await asyncio.gather(*tasks)
+
+
+async def safe_a_measure(
+    metric: BaseMetric, tc: LLMTestCase, ignore_errors: bool
+):
+    try:
+        try:
+            await metric.a_measure(tc, _show_indicator=False)
+        except TypeError:
+            await metric.a_measure(tc)
+    except Exception as e:
+        if ignore_errors:
+            metric.error = str(e)
+            metric.success = False  # Assuming you want to set success to False
+        else:
+            raise

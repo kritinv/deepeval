@@ -1,5 +1,13 @@
 @import '~font-awesome/css/font-awesome.min.css';
 
+.lexend-deca {
+  font-family: "Lexend Deca", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 500!important;
+  font-style: normal;
+}
+
+
 :root {
   --ifm-color-primary: #6d28d9;
   --ifm-color-primary-dark: #6223c5;
@@ -10,7 +18,18 @@
   --ifm-color-primary-lightest: #996ae5;
   --ifm-code-font-size: 95%;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+
+  .alert--success {
+      --ifm-alert-background-color: #def8ec !important;
+      --ifm-alert-border-color: #34d399 !important;
+  }
+
+  .alert--secondary {
+    --ifm-alert-background-color: #f8fafc !important;
+    --ifm-alert-border-color: black !important;
+  }
 }
+
 
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
@@ -25,6 +44,16 @@ html[data-theme='dark'] {
   --ifm-background-color: #13171e;
   --ifm-background-surface-color: #13171e;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+
+  .alert--success {
+    --ifm-alert-background-color: #022c22 !important;
+    --ifm-alert-border-color: #12be84 !important;
+  }
+
+  .alert--secondary {
+    --ifm-alert-background-color: #020617 !important;
+    --ifm-alert-border-color: white !important;
+  }
 }
 
 .navbar {
@@ -120,8 +149,30 @@ html[data-theme='dark'] #confident-workflow {
   filter: invert(100%);
 }
 
+#rag-evaluation {
+  margin-left: 140px;
+  width: 50%;
+}
+
+html[data-theme='dark'] #rag-evaluation {
+  filter: invert(100%);
+}
+
+@media (max-width: 1200px) {
+  #rag-evaluation {
+    width: 60%;
+  }
+}
+
 @media (max-width: 600px) {
   #confident-workflow {
     width: 100%!important
   }
+
+  #rag-evaluation {
+    margin-left: 0!important;
+    width: 80%!important
+  }
 }
+
+

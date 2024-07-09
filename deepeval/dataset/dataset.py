@@ -23,8 +23,8 @@ from deepeval.dataset.api import (
 )
 from deepeval.dataset.golden import Golden, ConversationalGolden
 from deepeval.test_case import LLMTestCase, ConversationalTestCase
-from deepeval.utils import is_confident
-from deepeval.synthesizer.base_synthesizer import BaseSynthesizer
+from deepeval.utils import convert_keys_to_snake_case, is_confident
+from deepeval.synthesizer.types import *
 
 valid_file_types = ["csv", "json"]
 
@@ -305,7 +305,7 @@ class EvaluationDataset:
                 )
             )
 
-    def push(self, alias: str):
+    def push(self, alias: str, overwrite: Optional[bool] = None):
         if len(self.test_cases) == 0 and len(self.goldens) == 0:
             raise ValueError(
                 "Unable to push empty dataset to Confident AI, there must be at least one test case or golden in dataset"
@@ -314,13 +314,17 @@ class EvaluationDataset:
             goldens = self.goldens
             goldens.extend(convert_test_cases_to_goldens(self.test_cases))
             api_dataset = APIDataset(
-                alias=alias, overwrite=False, goldens=goldens
+                alias=alias,
+                overwrite=overwrite,
+                goldens=goldens,
+                conversationalGoldens=self.conversational_goldens,
             )
             try:
                 body = api_dataset.model_dump(by_alias=True, exclude_none=True)
             except AttributeError:
                 # Pydantic version below 2.0
                 body = api_dataset.dict(by_alias=True, exclude_none=True)
+
             api = Api()
             result = api.post_request(
                 endpoint=Endpoints.DATASET_ENDPOINT.value,
@@ -360,9 +364,17 @@ class EvaluationDataset:
                     params={"alias": alias},
                 )
 
+                conversational_goldens = []
+                for cg in convert_keys_to_snake_case(
+                    result["conversationalGoldens"]
+                ):
+                    if "goldens" in cg:
+                        cg["messages"] = cg.pop("goldens")
+                    conversational_goldens.append(ConversationalGolden(**cg))
+
                 response = DatasetHttpResponse(
-                    goldens=result["goldens"],
-                    conversationalGoldens=result["conversationalGoldens"],
+                    goldens=convert_keys_to_snake_case(result["goldens"]),
+                    conversationalGoldens=conversational_goldens,
                     datasetId=result["datasetId"],
                 )
 
@@ -401,50 +413,131 @@ class EvaluationDataset:
                 "Run `deepeval login` to pull dataset from Confident AI"
             )
 
+    def generate_red_teaming_goldens(
+        self,
+        synthesizer=None,
+        contexts: Optional[List[List[str]]] = None,
+        include_expected_output: bool = False,
+        max_goldens: int = 2,
+        num_evolutions: int = 1,
+        attacks: List[RTAdversarialAttack] = [
+            RTAdversarialAttack.PROMPT_INJECTION,
+            RTAdversarialAttack.PROMPT_PROBING,
+            RTAdversarialAttack.GRAY_BOX_ATTACK,
+            RTAdversarialAttack.JAIL_BREAKING,
+        ],
+        vulnerabilities: List[RTVulnerability] = [
+            RTVulnerability.BIAS,
+            RTVulnerability.DATA_LEAKAGE,
+            RTVulnerability.HALLUCINATION,
+            RTVulnerability.OFFENSIVE,
+            RTVulnerability.UNFORMATTED,
+        ],
+        use_case: UseCase = UseCase.QA,
+        _show_indicator: bool = True,
+    ):
+        from deepeval.synthesizer import Synthesizer
+
+        if synthesizer is None:
+            synthesizer = Synthesizer()
+        else:
+            assert isinstance(synthesizer, Synthesizer)
+
+        self.goldens.extend(
+            synthesizer.generate_red_teaming_goldens(
+                contexts=contexts,
+                include_expected_output=include_expected_output,
+                max_goldens=max_goldens,
+                num_evolutions=num_evolutions,
+                attacks=attacks,
+                _show_indicator=_show_indicator,
+                vulnerabilities=vulnerabilities,
+                use_case=use_case,
+            )
+        )
+
     def generate_goldens(
         self,
-        synthesizer: BaseSynthesizer,
         contexts: List[List[str]],
+        include_expected_output: bool = False,
         max_goldens_per_context: int = 2,
         num_evolutions: int = 1,
         enable_breadth_evolve: bool = False,
         source_files: Optional[List[str]] = None,
         _show_indicator: bool = True,
+        evolutions: List[Evolution] = [
+            Evolution.REASONING,
+            Evolution.MULTICONTEXT,
+            Evolution.CONCRETIZING,
+            Evolution.CONSTRAINED,
+            Evolution.COMPARATIVE,
+            Evolution.HYPOTHETICAL,
+        ],
+        use_case: UseCase = UseCase.QA,
+        synthesizer=None,
     ):
+        from deepeval.synthesizer import Synthesizer
+
+        if synthesizer is None:
+            synthesizer = Synthesizer()
+        else:
+            assert isinstance(synthesizer, Synthesizer)
+
         self.goldens.extend(
             synthesizer.generate_goldens(
                 contexts=contexts,
+                include_expected_output=include_expected_output,
                 max_goldens_per_context=max_goldens_per_context,
                 num_evolutions=num_evolutions,
                 enable_breadth_evolve=enable_breadth_evolve,
                 source_files=source_files,
                 _show_indicator=_show_indicator,
+                evolutions=evolutions,
+                use_case=use_case,
             )
         )
 
     def generate_goldens_from_docs(
         self,
-        synthesizer: BaseSynthesizer,
         document_paths: List[str],
+        include_expected_output: bool = False,
         max_goldens_per_document: int = 5,
         chunk_size: int = 1024,
         chunk_overlap: int = 0,
         num_evolutions: int = 1,
         enable_breadth_evolve: bool = False,
+        evolutions: List[Evolution] = [
+            Evolution.REASONING,
+            Evolution.MULTICONTEXT,
+            Evolution.CONCRETIZING,
+            Evolution.CONSTRAINED,
+            Evolution.COMPARATIVE,
+            Evolution.HYPOTHETICAL,
+        ],
+        synthesizer=None,
     ):
+        from deepeval.synthesizer import Synthesizer
+
+        if synthesizer is None:
+            synthesizer = Synthesizer()
+        else:
+            assert isinstance(synthesizer, Synthesizer)
+
         self.goldens.extend(
             synthesizer.generate_goldens_from_docs(
                 document_paths=document_paths,
+                include_expected_output=include_expected_output,
                 max_goldens_per_document=max_goldens_per_document,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
                 num_evolutions=num_evolutions,
                 enable_breadth_evolve=enable_breadth_evolve,
+                evolutions=evolutions,
             )
         )
 
     # TODO: add save test cases as well
-    def save_as(self, file_type: str, directory: str):
+    def save_as(self, file_type: str, directory: str) -> str:
         if file_type not in valid_file_types:
             raise ValueError(
                 f"Invalid file type. Available file types to save as: {', '.join(type for type in valid_file_types)}"
@@ -472,6 +565,7 @@ class EvaluationDataset:
                         "actual_output": golden.actual_output,
                         "expected_output": golden.expected_output,
                         "context": golden.context,
+                        "source_file": golden.source_file,
                     }
                     for golden in self.goldens
                 ]
@@ -481,17 +575,24 @@ class EvaluationDataset:
             with open(full_file_path, "w", newline="") as file:
                 writer = csv.writer(file)
                 writer.writerow(
-                    ["input", "actual_output", "expected_output", "context"]
+                    [
+                        "input",
+                        "actual_output",
+                        "expected_output",
+                        "context",
+                        "source_file",
+                    ]
                 )
                 for golden in self.goldens:
-                    context_str = "|".join(golden.context)
                     writer.writerow(
                         [
                             golden.input,
                             golden.actual_output,
                             golden.expected_output,
-                            context_str,
+                            "|".join(golden.context),
+                            golden.source_file,
                         ]
                     )
 
         print(f"Evaluation dataset saved at {full_file_path}!")
+        return full_file_path

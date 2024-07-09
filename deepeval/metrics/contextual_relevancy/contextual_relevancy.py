@@ -2,8 +2,9 @@ from typing import Optional, List, Union
 from pydantic import BaseModel, Field
 import asyncio
 
-from deepeval.utils import get_or_create_event_loop
+from deepeval.utils import get_or_create_event_loop, prettify_list
 from deepeval.metrics.utils import (
+    print_intermediate_steps,
     validate_conversational_test_case,
     trimAndLoadJson,
     check_llm_test_case_params,
@@ -20,7 +21,6 @@ from deepeval.metrics.contextual_relevancy.template import (
     ContextualRelevancyTemplate,
 )
 from deepeval.metrics.indicator import metric_progress_indicator
-from deepeval.telemetry import capture_metric_type
 
 required_params: List[LLMTestCaseParams] = [
     LLMTestCaseParams.INPUT,
@@ -42,6 +42,7 @@ class ContextualRelevancyMetric(BaseMetric):
         include_reason: bool = True,
         async_mode: bool = True,
         strict_mode: bool = False,
+        verbose_mode: bool = False,
     ):
         self.threshold = 1 if strict_mode else threshold
         self.model, self.using_native_model = initialize_model(model)
@@ -49,6 +50,7 @@ class ContextualRelevancyMetric(BaseMetric):
         self.include_reason = include_reason
         self.async_mode = async_mode
         self.strict_mode = strict_mode
+        self.verbose_mode = verbose_mode
 
     def measure(
         self, test_case: Union[LLMTestCase, ConversationalTestCase]
@@ -73,7 +75,14 @@ class ContextualRelevancyMetric(BaseMetric):
                 self.score = self._calculate_score()
                 self.reason = self._generate_reason(test_case.input)
                 self.success = self.score >= self.threshold
-                capture_metric_type(self.__name__)
+                if self.verbose_mode:
+                    print_intermediate_steps(
+                        self.__name__,
+                        steps=[
+                            f"Verdicts:\n{prettify_list(self.verdicts)}\n",
+                            f"Score: {self.score}\nReason: {self.reason}",
+                        ],
+                    )
                 return self.score
 
     async def a_measure(
@@ -99,7 +108,14 @@ class ContextualRelevancyMetric(BaseMetric):
             self.score = self._calculate_score()
             self.reason = await self._a_generate_reason(test_case.input)
             self.success = self.score >= self.threshold
-            capture_metric_type(self.__name__)
+            if self.verbose_mode:
+                print_intermediate_steps(
+                    self.__name__,
+                    steps=[
+                        f"Verdicts:\n{prettify_list(self.verdicts)}\n",
+                        f"Score: {self.score}\nReason: {self.reason}",
+                    ],
+                )
             return self.score
 
     async def _a_generate_reason(self, input: str):
@@ -117,11 +133,13 @@ class ContextualRelevancyMetric(BaseMetric):
             score=format(self.score, ".2f"),
         )
         if self.using_native_model:
-            res, cost = await self.model.a_generate(prompt)
+            res, cost = self.model.generate(prompt)
             self.evaluation_cost += cost
         else:
-            res = await self.model.a_generate(prompt)
-        return res
+            res = self.model.generate(prompt)
+
+        data = trimAndLoadJson(res, self)
+        return data["reason"]
 
     def _generate_reason(self, input: str):
         if self.include_reason is False:
@@ -142,7 +160,9 @@ class ContextualRelevancyMetric(BaseMetric):
             self.evaluation_cost += cost
         else:
             res = self.model.generate(prompt)
-        return res
+
+        data = trimAndLoadJson(res, self)
+        return data["reason"]
 
     def _calculate_score(self):
         total_verdicts = len(self.verdicts)

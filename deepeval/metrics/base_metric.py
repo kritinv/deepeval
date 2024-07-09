@@ -1,7 +1,7 @@
 from abc import abstractmethod
+from typing import Optional, Dict
 
 from deepeval.test_case import LLMTestCase, ConversationalTestCase
-from typing import Optional, Dict
 
 
 class BaseMetric:
@@ -12,6 +12,7 @@ class BaseMetric:
     evaluation_model: Optional[str] = None
     strict_mode: bool = False
     async_mode: bool = True
+    verbose_mode: bool = True
     include_reason: bool = False
     error: Optional[str] = None
     evaluation_cost: Optional[float] = None

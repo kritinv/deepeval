@@ -12,6 +12,20 @@ The processes of retrieving relevant context, is carried out by the **retriever*
 
 Since a satisfactory LLM output depends entirely on the quality of the retriever and generator, RAG evaluation focuses on evaluating the retriever and generator in your RAG pipeline seperately. This also allows for easier debugging and to pinpoint issues on a component level.
 
+<div
+  style={{
+    marginTop: "30px",
+    marginBottom: "60px",
+    display: "flex",
+    justifyContent: "center",
+  }}
+>
+  <img
+    id="rag-evaluation"
+    src="https://d2lsxfc3p6r9rv.cloudfront.net/rag-pipeline.svg"
+  />
+</div>
+
 ## Common Pitfalls in RAG Pipelines
 
 A RAG pipeline involves a retrieval and generation step, which is influenced by your choice of hyperparameters. Hyperparameters include things like the embedding model to use for retrieval, the number of nodes to retrieve (we'll just be referring to just as "top-K" from here onwards), LLM temperature, prompt template, etc.
@@ -25,7 +39,7 @@ Remember, the retriever is responsible for the retrieval step, while the generat
 The retrieval step typically involves:
 
 1. **Vectorizing the initial input into an embedding**, using an embedding model of your choice (eg. OpenAI's `text-embedding-3-large` model).
-2. **Performing a vector secrch** (by using the previously embedded input) on the vector store that contains your vectorized knowledge base, to retrieve the top-K most "similar" vectorized text chunks in your vector store.
+2. **Performing a vector search** (by using the previously embedded input) on the vector store that contains your vectorized knowledge base, to retrieve the top-K most "similar" vectorized text chunks in your vector store.
 3. **Rerank the retrieved nodes**. The initial ranking provided by the vector search might not always align perfectly with the specific relevance for your specific use-case.
 
 :::tip
@@ -90,7 +104,7 @@ All metrics in `deepeval` allows you to set passing `threshold`s, turn on `stric
 
 - [`ContextualPrecisionMetric`](metrics-contextual-precision)
 - [`ContextualRecallMetric`](metrics-contextual-recall)
-- [`ContextualRelevancyMetric`](<(metrics-contextual-relevancy)>)
+- [`ContextualRelevancyMetric`](metrics-contextual-relevancy)
 
 :::
 
@@ -160,7 +174,7 @@ Using these metrics, you can easily see how changes to different hyperparameters
 In reality, the hyperparameters for the generator isn't as clear-cut as hyperparameters in the retriever.
 :::
 
-_(To evaluate generation on customized criteria, you should use the [`GEval`](evaluation-llm-eval) metric instead, which covers all custom use cases.)_
+_(To evaluate generation on customized criteria, you should use the [`GEval`](metrics-llm-evals) metric instead, which covers all custom use cases.)_
 
 Similar to retrieval metrics, using these scores in conjucation will best align with human expectations of what a good LLM output looks like.
 
@@ -248,7 +262,7 @@ print("Score: ", dark_humor.score)
 print("Reason: ", dark_humor.reason)
 ```
 
-You can visit the [`GEval` page](evaluation-llm-eval) to learn more about this metric.
+You can visit the [`GEval` page](metrics-llm-evals) to learn more about this metric.
 
 ## E2E RAG Evaluation
 

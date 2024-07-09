@@ -11,11 +11,12 @@ from deepeval.dataset import EvaluationDataset
 class FakeMetric(BaseMetric):
     # This metric by default checks if the latency is greater than 10 seconds
     def __init__(self, threshold: float = 0.5):
+        super().__init__()
         self.threshold = threshold
 
     def measure(self, test_case: LLMTestCase):
         # Set self.success and self.score in the "measure" method
-        self.score = random.uniform(0.0, 1.0)
+        self.score = random.uniform(0.5, 1.0)
         self.success = self.score >= self.threshold
         # You can also optionally set a reason for the score returned.
         # This is particularly useful for a score computed using LLMs
@@ -23,7 +24,7 @@ class FakeMetric(BaseMetric):
         return self.score
 
     async def a_measure(self, test_case: LLMTestCase):
-        self.score = random.uniform(0.0, 1.0)
+        self.score = random.uniform(0.5, 1.0)
         self.success = self.score >= self.threshold
         # You can also optionally set a reason for the score returned.
         # This is particularly useful for a score computed using LLMs

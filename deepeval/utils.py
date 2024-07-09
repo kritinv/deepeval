@@ -1,3 +1,4 @@
+from contextvars import ContextVar
 from enum import Enum
 import copy
 import os
@@ -13,9 +14,50 @@ from dataclasses import asdict, is_dataclass
 import re
 import asyncio
 import nest_asyncio
+import uuid
+from pydantic import BaseModel
 
 from deepeval.key_handler import KeyValues, KEY_FILE_HANDLER
-from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+
+
+def camel_to_snake(name: str) -> str:
+    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
+
+
+def convert_keys_to_snake_case(data: Any) -> Any:
+    if isinstance(data, dict):
+        return {
+            camel_to_snake(k): convert_keys_to_snake_case(v)
+            for k, v in data.items()
+        }
+    elif isinstance(data, list):
+        return [convert_keys_to_snake_case(i) for i in data]
+    else:
+        return data
+
+
+def prettify_list(lst: List[Any]):
+    if len(lst) == 0:
+        return "[]"
+
+    formatted_elements = []
+    for item in lst:
+        if isinstance(item, str):
+            formatted_elements.append(f'"{item}"')
+        elif isinstance(item, BaseModel):
+            formatted_elements.append(
+                json.dumps(item.dict(), indent=4).replace("\n", "\n    ")
+            )
+        else:
+            formatted_elements.append(repr(item))  # Fallback for other types
+
+    formatted_list = ",\n    ".join(formatted_elements)
+    return f"[\n    {formatted_list}\n]"
+
+
+def generate_uuid() -> str:
+    return str(uuid.uuid4())
 
 
 def serialize_dict_with_sorting(obj):
@@ -129,33 +171,47 @@ def get_is_running_deepeval() -> bool:
         return False
 
 
-def get_deployment_configs() -> Optional[Dict]:
-    if os.getenv("GITHUB_ACTIONS") == "true":
-        env_info = {
-            "env": "GitHub Actions",
-            "actor": os.getenv("GITHUB_ACTOR", None),
-            "sha": os.getenv("GITHUB_SHA", None),
-            "repo": os.getenv("GITHUB_REPOSITORY", None),
-        }
+def is_in_ci_env() -> bool:
+    ci_env_vars = [
+        "GITHUB_ACTIONS",  # GitHub Actions
+        "GITLAB_CI",  # GitLab CI
+        "CIRCLECI",  # CircleCI
+        "JENKINS_URL",  # Jenkins
+        "TRAVIS",  # Travis CI
+        "CI",  # Generic CI indicator used by many services
+        "CONTINUOUS_INTEGRATION",  # Another generic CI indicator
+        "TEAMCITY_VERSION",  # TeamCity
+        "BUILDKITE",  # Buildkite
+        "BITBUCKET_BUILD_NUMBER",  # Bitbucket Pipelines
+        "SYSTEM_TEAMFOUNDATIONCOLLECTIONURI",  # Azure Pipelines
+        "HEROKU_TEST_RUN_ID",  # Heroku CI
+    ]
 
-        branch_ref = os.getenv("GITHUB_REF", "")
-        if branch_ref.startswith("refs/pull/"):
-            is_pull_request = True
-        else:
-            is_pull_request = False
+    for var in ci_env_vars:
+        if os.getenv(var) is not None:
+            return True
 
-        env_info["is_pull_request"] = is_pull_request
-        env_info["branch"] = (
-            branch_ref.replace("refs/heads/", "") if branch_ref else None
-        )
-        return env_info
-
-    return None
+    return False
 
 
 def is_confident():
     confident_api_key = KEY_FILE_HANDLER.fetch_data(KeyValues.API_KEY)
     return confident_api_key is not None
+
+
+def capture_contextvars(single_obj):
+    contextvars_dict = {}
+    for attr in dir(single_obj):
+        attr_value = getattr(single_obj, attr, None)
+        if isinstance(attr_value, ContextVar):
+            contextvars_dict[attr] = (attr_value, attr_value.get())
+    return contextvars_dict
+
+
+def update_contextvars(single_obj, contextvars_dict):
+    for attr, (context_var, value) in contextvars_dict.items():
+        context_var.set(value)
+        setattr(single_obj, attr, context_var)
 
 
 def drop_and_copy(obj, drop_attrs):
@@ -168,23 +224,48 @@ def drop_and_copy(obj, drop_attrs):
                 delattr(single_obj, attr)
         return temp_attrs
 
+    # Function to remove ContextVar attributes from a single object
+    def remove_contextvars(single_obj):
+        temp_contextvars = {}
+        for attr in dir(single_obj):
+            if isinstance(getattr(single_obj, attr, None), ContextVar):
+                temp_contextvars[attr] = getattr(single_obj, attr)
+                delattr(single_obj, attr)
+        return temp_contextvars
+
+    # Function to restore ContextVar attributes to a single object
+    def restore_contextvars(single_obj, contextvars):
+        for attr, value in contextvars.items():
+            setattr(single_obj, attr, value)
+
     # Check if obj is iterable (but not a string)
     if isinstance(obj, Iterable) and not isinstance(obj, str):
         copied_objs = []
         for item in obj:
             temp_attrs = drop_attrs_from_single_obj(item, drop_attrs)
-            copied_objs.append(copy.deepcopy(item))
-            # Restore attributes to the original item
+            temp_contextvars = remove_contextvars(item)
+            copied_obj = copy.deepcopy(item)
+            restore_contextvars(copied_obj, temp_contextvars)
+
+            # Restore attributes to the original object
             for attr, value in temp_attrs.items():
                 setattr(item, attr, value)
+            restore_contextvars(item, temp_contextvars)
+
+            copied_objs.append(copied_obj)
+
         return copied_objs
     else:
-        # If obj is not iterable, apply directly
         temp_attrs = drop_attrs_from_single_obj(obj, drop_attrs)
+        temp_contextvars = remove_contextvars(obj)
         copied_obj = copy.deepcopy(obj)
+        restore_contextvars(copied_obj, temp_contextvars)
+
         # Restore attributes to the original object
         for attr, value in temp_attrs.items():
             setattr(obj, attr, value)
+        restore_contextvars(obj, temp_contextvars)
+
         return copied_obj
 
 

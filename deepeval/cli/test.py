@@ -3,6 +3,7 @@ import pytest
 import typer
 import os
 import json
+import sys
 from typing_extensions import Annotated
 from typing import Optional
 
@@ -10,12 +11,11 @@ from deepeval.test_run import test_run_manager, TEMP_FILE_NAME
 from deepeval.test_run.cache import TEMP_CACHE_FILE_NAME
 from deepeval.utils import (
     delete_file_if_exists,
-    get_deployment_configs,
     set_should_ignore_errors,
     set_should_use_cache,
 )
 from deepeval.test_run import invoke_test_run_end_hook
-from deepeval.telemetry import capture_evaluation_count
+from deepeval.telemetry import capture_evaluation_run
 from deepeval.utils import set_is_running_deepeval
 
 app = typer.Typer(name="test")
@@ -99,11 +99,6 @@ def run(
     if exit_on_first_failure:
         pytest_args.insert(0, "-x")
 
-    deployment_configs = get_deployment_configs()
-    if deployment_configs is not None:
-        deployment_configs_json = json.dumps(deployment_configs)
-        pytest_args.extend(["--deployment", deployment_configs_json])
-
     pytest_args.extend(
         [
             "--verbose" if verbose else "--quiet",
@@ -132,12 +127,15 @@ def run(
     pytest_args.extend(["-p", "plugins"])
 
     start_time = time.perf_counter()
-    retcode = pytest.main(pytest_args)
-    capture_evaluation_count()
+    with capture_evaluation_run("deepeval test run"):
+        pytest_retcode = pytest.main(pytest_args)
     end_time = time.perf_counter()
     run_duration = end_time - start_time
     test_run_manager.wrap_up_test_run(run_duration)
 
     invoke_test_run_end_hook()
 
-    return retcode
+    if pytest_retcode == 1:
+        sys.exit(1)
+
+    return pytest_retcode

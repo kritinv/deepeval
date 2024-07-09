@@ -8,8 +8,9 @@ from deepeval.test_case import (
     ConversationalTestCase,
 )
 from deepeval.metrics import BaseMetric
-from deepeval.utils import get_or_create_event_loop
+from deepeval.utils import get_or_create_event_loop, prettify_list
 from deepeval.metrics.utils import (
+    print_intermediate_steps,
     validate_conversational_test_case,
     trimAndLoadJson,
     check_llm_test_case_params,
@@ -18,7 +19,6 @@ from deepeval.metrics.utils import (
 from deepeval.models import DeepEvalBaseLLM
 from deepeval.metrics.faithfulness.template import FaithfulnessTemplate
 from deepeval.metrics.indicator import metric_progress_indicator
-from deepeval.telemetry import capture_metric_type
 
 required_params: List[LLMTestCaseParams] = [
     LLMTestCaseParams.INPUT,
@@ -40,6 +40,7 @@ class FaithfulnessMetric(BaseMetric):
         include_reason: bool = True,
         async_mode: bool = True,
         strict_mode: bool = False,
+        verbose_mode: bool = False,
     ):
         self.threshold = 1 if strict_mode else threshold
         self.model, self.using_native_model = initialize_model(model)
@@ -47,6 +48,7 @@ class FaithfulnessMetric(BaseMetric):
         self.include_reason = include_reason
         self.async_mode = async_mode
         self.strict_mode = strict_mode
+        self.verbose_mode = verbose_mode
 
     def measure(
         self, test_case: Union[LLMTestCase, ConversationalTestCase]
@@ -69,7 +71,16 @@ class FaithfulnessMetric(BaseMetric):
                 self.score = self._calculate_score()
                 self.reason = self._generate_reason()
                 self.success = self.score >= self.threshold
-                capture_metric_type(self.__name__)
+                if self.verbose_mode:
+                    print_intermediate_steps(
+                        self.__name__,
+                        steps=[
+                            f"Truths:\n{prettify_list(self.truths)}\n",
+                            f"Claims:\n{prettify_list(self.claims)}\n",
+                            f"Verdicts:\n{prettify_list(self.verdicts)}\n",
+                            f"Score: {self.score}\nReason: {self.reason}",
+                        ],
+                    )
                 return self.score
 
     async def a_measure(
@@ -93,7 +104,16 @@ class FaithfulnessMetric(BaseMetric):
             self.score = self._calculate_score()
             self.reason = await self._a_generate_reason()
             self.success = self.score >= self.threshold
-            capture_metric_type(self.__name__)
+            if self.verbose_mode:
+                print_intermediate_steps(
+                    self.__name__,
+                    steps=[
+                        f"Truths:\n{prettify_list(self.truths)}\n",
+                        f"Claims:\n{prettify_list(self.claims)}\n",
+                        f"Verdicts:\n{prettify_list(self.verdicts)}\n",
+                        f"Score: {self.score}\nReason: {self.reason}",
+                    ],
+                )
             return self.score
 
     async def _a_generate_reason(self) -> str:
@@ -109,12 +129,15 @@ class FaithfulnessMetric(BaseMetric):
             contradictions=contradictions,
             score=format(self.score, ".2f"),
         )
+
         if self.using_native_model:
-            res, cost = await self.model.a_generate(prompt)
+            res, cost = self.model.generate(prompt)
             self.evaluation_cost += cost
         else:
-            res = await self.model.a_generate(prompt)
-        return res
+            res = self.model.generate(prompt)
+
+        data = trimAndLoadJson(res, self)
+        return data["reason"]
 
     def _generate_reason(self) -> str:
         if self.include_reason is False:
@@ -129,13 +152,15 @@ class FaithfulnessMetric(BaseMetric):
             contradictions=contradictions,
             score=format(self.score, ".2f"),
         )
+
         if self.using_native_model:
             res, cost = self.model.generate(prompt)
             self.evaluation_cost += cost
         else:
             res = self.model.generate(prompt)
 
-        return res
+        data = trimAndLoadJson(res, self)
+        return data["reason"]
 
     async def _a_generate_verdicts(self) -> List[FaithfulnessVerdict]:
         if len(self.claims) == 0:

@@ -12,12 +12,15 @@ from deepeval.scorer import Scorer
 
 class GSM8K(DeepEvalBaseBenchmark):
     def __init__(
-        self, n_shots: int = 3, enable_cot: bool = True, n_problems: int = 1319
+        self,
+        n_shots: int = 3,
+        enable_cot: bool = True,
+        n_problems: int = 1319,
+        **kwargs,
     ):
         assert n_shots <= 15, "GSM8K only supports n_shots <= 15"
-        super().__init__()
+        super().__init__(**kwargs)
         self.scorer = Scorer()
-        self.dataset: Dataset = None
         self.shots_dataset: List[Dict] = None
 
         self.n_shots: int = n_shots
@@ -95,7 +98,7 @@ class GSM8K(DeepEvalBaseBenchmark):
         for data in dataset["test"]:
             input = data["question"]
             output = GSM8KTemplate.format_answer(data)
-            golden = Golden(input=input, expectedOutput=output)
+            golden = Golden(input=input, expected_output=output)
             goldens.append(golden)
 
         return goldens

@@ -52,6 +52,11 @@ def trimAndLoadJson(
 ) -> Any:
     start = input_string.find("{")
     end = input_string.rfind("}") + 1
+
+    if end == 0 and start != -1:
+        input_string = input_string + "}"
+        end = len(input_string)
+
     jsonStr = input_string[start:end] if start != -1 and end != 0 else ""
 
     try:
@@ -79,3 +84,16 @@ def initialize_model(
         return model, False
     # Otherwise (the model is a string or None), we initialize a GPTModel and use as a native model
     return GPTModel(model=model), True
+
+
+def print_intermediate_steps(metric: str, steps: List[str]):
+    print("*" * 50)
+    print(f"{metric} Verbose Logs")
+    print("*" * 50)
+    print("")
+    for index, step in enumerate(steps):
+        print(step)
+        if index < len(steps) - 1:
+            print("")
+    print("")
+    print("=" * 70)
