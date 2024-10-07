@@ -5,7 +5,6 @@ class AttackEnhancement(Enum):
     GRAY_BOX_ATTACK = "Gray Box Attack"
     PROMPT_INJECTION = "Prompt Injection"
     PROMPT_PROBING = "Prompt Probing"
-    JAILBREAKING = "Jailbreaking"
     JAILBREAK_LINEAR = "Linear Jailbreak"
     JAILBREAK_TREE = "Tree Jailbreak"
     ROT13 = "ROT13 Encoding"
